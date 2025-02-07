@@ -93,6 +93,7 @@ typedef struct _ebpf_program
     size_t helper_function_count;
     uint32_t* helper_function_ids;
     bool helper_ids_set;
+    uint64_t flags;
 
     // Lock protecting the fields below.
     ebpf_lock_t lock;
@@ -2700,39 +2701,14 @@ ebpf_program_get_runtime_state(_In_ const void* program_context, _Outptr_ const 
     *state = (ebpf_execution_context_state_t*)header->context_header[0];
 }
 
-void
-ebpf_program_set_header_context_descriptor(
-    const ebpf_context_descriptor_t* context_descriptor, _Inout_ void* program_context)
+uint64_t
+ebpf_program_get_flags(_In_ const ebpf_program_t* program)
 {
-    // slot [1] contains the context_descriptor for the program.
-    ebpf_context_header_t* header = CONTAINING_RECORD(program_context, ebpf_context_header_t, context);
-
-    header->context_header[1] = (uint64_t)context_descriptor;
+    return program->flags;
 }
 
 void
-ebpf_program_get_header_context_descriptor(
-    _In_ const void* program_context, _Outptr_ const ebpf_context_descriptor_t** context_descriptor)
+ebpf_program_set_flags(_Inout_ ebpf_program_t* program, uint64_t flags)
 {
-    ebpf_context_header_t* header = CONTAINING_RECORD(program_context, ebpf_context_header_t, context);
-    *context_descriptor = (ebpf_context_descriptor_t*)header->context_header[1];
-}
-
-void
-ebpf_program_get_context_data(
-    _In_ const void* program_context, _Outptr_ const uint8_t** data_start, _Outptr_ const uint8_t** data_end)
-{
-    ebpf_context_descriptor_t* context_descriptor;
-    ebpf_program_get_header_context_descriptor(program_context, &context_descriptor);
-    if (context_descriptor->data < 0 || context_descriptor->end < 0) {
-        *data_start = NULL;
-        *data_end = NULL;
-        return;
-    } else {
-        ebpf_assert(
-            (context_descriptor->data + 8) <= context_descriptor->size &&
-            (context_descriptor->end + 8) <= context_descriptor->size);
-        *data_start = *(const uint8_t**)((char*)program_context + context_descriptor->data);
-        *data_end = *(const uint8_t**)((char*)program_context + context_descriptor->end);
-    }
+    program->flags = flags;
 }
