@@ -399,6 +399,84 @@ ring_buffer__free(struct ring_buffer* ring_buffer)
     delete ring_buffer;
 }
 
+typedef struct perf_buffer
+{
+    std::vector<perf_event_array_subscription_t*> subscriptions;
+} perf_buffer_t;
+
+struct perf_buffer*
+perf_buffer__new(
+    int map_fd,
+    size_t page_cnt,
+    perf_buffer_sample_fn sample_cb,
+    perf_buffer_lost_fn lost_cb,
+    void* ctx,
+    const struct perf_buffer_opts* opts)
+{
+    ebpf_result result = EBPF_SUCCESS;
+    perf_buffer_t* local_perf_buffer = nullptr;
+
+    UNREFERENCED_PARAMETER(opts);
+    UNREFERENCED_PARAMETER(page_cnt);
+
+    if (sample_cb == nullptr) {
+        result = EBPF_INVALID_ARGUMENT;
+        goto Exit;
+    }
+
+    try {
+        std::unique_ptr<perf_buffer_t> perf_buffer = std::make_unique<perf_buffer_t>();
+        perf_event_array_subscription_t* subscription = nullptr;
+        result = ebpf_perf_event_array_map_subscribe(map_fd, ctx, sample_cb, lost_cb, &subscription);
+        if (result != EBPF_SUCCESS) {
+            goto Exit;
+        }
+        perf_buffer->subscriptions.push_back(subscription);
+        local_perf_buffer = perf_buffer.release();
+    } catch (const std::bad_alloc&) {
+        result = EBPF_NO_MEMORY;
+        goto Exit;
+    }
+Exit:
+    if (result != EBPF_SUCCESS) {
+        errno = libbpf_result_err(result);
+        EBPF_LOG_FUNCTION_ERROR(result);
+    }
+    EBPF_RETURN_POINTER(perf_buffer*, local_perf_buffer);
+}
+
+void
+perf_buffer__free(struct perf_buffer* pb)
+{
+    for (auto it = pb->subscriptions.begin(); it != pb->subscriptions.end(); it++) {
+        (void)ebpf_perf_event_array_map_unsubscribe(*it);
+    }
+    pb->subscriptions.clear();
+    delete pb;
+}
+
+int
+perf_buffer__poll(struct perf_buffer* pb, int timeout_ms)
+{
+    if (!pb) {
+        return -1;
+    }
+
+    // Create an array of handles for the subscriptions
+    std::vector<HANDLE> handles;
+    for (auto& sub : pb->subscriptions) {
+    }
+
+    // Wait for any of the handles to be signaled
+    DWORD result = WaitForMultipleObjects(handles.size(), handles.data(), FALSE, timeout_ms);
+    if (result == WAIT_FAILED) {
+        return -1;
+    }
+
+    // Return the index of the signaled handle
+    return result - WAIT_OBJECT_0;
+}
+
 const char*
 libbpf_bpf_map_type_str(enum bpf_map_type t)
 {

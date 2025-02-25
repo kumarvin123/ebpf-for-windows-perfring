@@ -915,32 +915,61 @@ ring_buffer__new(int map_fd, ring_buffer_sample_fn sample_cb, void* ctx, const s
  */
 void
 ring_buffer__free(struct ring_buffer* rb);
-/** @} */
+
+/* Perf buffer APIs */
+struct perf_buffer;
+
+typedef void (*perf_buffer_sample_fn)(void* ctx, int cpu, void* data, __u32 size);
+typedef void (*perf_buffer_lost_fn)(void* ctx, int cpu, __u64 cnt);
 
 /**
- * @brief Query the BPF program flags.
- *
- * @param[in] prog A pointer to the BPF program.
- * @return The flags of the BPF program that were last set by this process.
+ * @brief **perf_buffer__new()** creates BPF perfbuf manager for a specified
+ * BPF_PERF_EVENT_ARRAY map
+ * @param map_fd FD of BPF_PERF_EVENT_ARRAY BPF map that will be used by BPF
+ * code to send data over to user-space
+ * @param page_cnt number of memory pages allocated for each per-CPU buffer
+ * @param sample_cb function called on each received data record
+ * @param lost_cb function called when record loss has occurred
+ * @param ctx user-provided extra context passed into *sample_cb* and *lost_cb*
+ * @return a new instance of struct perf_buffer on success, NULL on error with
+ * *errno* containing an error code
  */
-__u32
-bpf_program__flags(const struct bpf_program* prog);
+LIBBPF_API struct perf_buffer*
+perf_buffer__new(
+    int map_fd,
+    size_t page_cnt,
+    perf_buffer_sample_fn sample_cb,
+    perf_buffer_lost_fn lost_cb,
+    void* ctx,
+    const struct perf_buffer_opts* opts);
 
 /**
- * @brief Set the BPF program flags.
- * The set of flags is defined by the program type. Neither libbpf nor the eBPF runtime check the flags and only
- * the extension that handles this program type will interpret them.  See the documentation for the
- * program type for what flags are defined for that program type.
+ * @brief Frees a perf buffer manager.
  *
- * @param[in] prog A pointer to the BPF program.
- * @param[in] flags The flags to set.
+ * @param[in] rb Pointer to perf buffer manager to be freed.
+ */
+LIBBPF_API void
+perf_buffer__free(struct perf_buffer* pb);
+
+/**
+ * @brief poll perfbuf for new data
+ * Poll for available data and consume records, if any are available.
  *
- * @retval 0 The operation was successful.
- * @retval <0 An error occurred, and errno was set.
+ * Must be called to receive callbacks by default (without auto callbacks).
+ * NOT supported when PERFBUF_FLAG_AUTO_CALLBACK is set.
  *
+ * If timeout_ms is zero, poll will not wait but only invoke the callback on records that are ready.
+ * If timeout_ms is -1, poll will wait until data is ready (no timeout).
+ *
+ * @param[in] pb Pointer to perf buffer manager.
+ * @param[in] timeout_ms maximum time to wait for (in milliseconds).
+ *
+ * @returns number of records consumed, INT_MAX, or a negative number on error
  */
 int
-bpf_program__set_flags(struct bpf_program* prog, __u32 flags);
+perf_buffer__poll(struct perf_buffer* pb, int timeout_ms);
+
+/** @} */
 
 #else
 #pragma warning(push)
